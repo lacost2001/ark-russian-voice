@@ -81,7 +81,7 @@ def read_package(package,config):
             payload[e['path']]=data
     return m,payload
 
-def apply(game,package,config,restore=False,progress=lambda text,value:None,check_running=game_running):
+def apply(game,package,config,restore=False,progress=lambda text,value:None,check_running=game_running,legacy_roots=(),dry_run=False):
     game=Path(game).resolve()
     if game not in game_candidates(game):raise ValueError('Выберите папку ARK: внутри должна находиться папка ShooterGame.')
     if check_running():raise ValueError('Полностью закройте ARK перед установкой или восстановлением.')
@@ -90,7 +90,7 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
     backup_root=game/'.ark-russian-voice-backup'
     if backup_root.is_symlink() or (backup_root.exists() and backup_root.resolve()!=backup_root):
         raise ValueError('Некорректная папка резервной копии.')
-    prepared=[]
+    prepared=[];recovered={}
     for e in manifest['entries']:
         target=safe_path(game,e['path'])
         if not target.is_file():raise ValueError('В этой версии ARK отсутствует файл: '+e['path'])
@@ -102,22 +102,37 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
         if backup.exists() and (backup.is_symlink() or digest(backup.read_bytes())!=e['original_sha256']):
             raise ValueError('Резервная копия повреждена: '+target.name)
         if oldhash!=e['original_sha256'] and not backup.exists():
-            raise ValueError('Для обновления нужна резервная копия оригинала: '+target.name)
+            for root in legacy_roots:
+                root=Path(root)
+                for source in (root/e['path'],root/backup.name):
+                    if source.is_file():
+                        data=source.read_bytes()
+                        if digest(data)==e['original_sha256']:recovered[backup]=data;break
+                if backup in recovered:break
+            if backup not in recovered:
+                raise ValueError('Найдена прежняя озвучка, но оригинал не сохранён: '+target.name+
+                    '\nНажмите «Найти резервные копии…» и выберите папку старых оригиналов.'+
+                    '\nЕсли копий нет, восстановите оригинальные файлы через проверку файлов ARK в Steam, затем установите озвучку заново.')
         if restore:
             if oldhash==e['original_sha256']:continue
-            if not backup.exists():raise ValueError('Нет резервной копии оригинала: '+target.name)
-            new=backup.read_bytes()
+            new=backup.read_bytes() if backup.exists() else recovered[backup]
         else:
             if oldhash==e['new_sha256']:continue
             new=payload[e['path']]
         prepared.append((target,backup,old,new,e))
-    if not prepared:
+    if dry_run:return len(prepared)
+    if not prepared and not recovered:
         progress('Оригиналы уже восстановлены.' if restore else 'Озвучка уже установлена.',100)
         return 0
-    required=sum(len(old)+len(new) for _,_,old,new,_ in prepared)+64*1024*1024
+    required=sum(len(old)+len(new) for _,_,old,new,_ in prepared)+sum(map(len,recovered.values()))+64*1024*1024
     if shutil.disk_usage(game).free<required:raise ValueError('Недостаточно свободного места для установки с резервной копией.')
     if check_running():raise ValueError('ARK запущен. Закройте игру и повторите.')
     backup_root.mkdir(exist_ok=True)
+    for backup,data in recovered.items():
+        if backup.exists():
+            if digest(backup.read_bytes())!=digest(data):raise ValueError('Резервная копия изменилась во время проверки.')
+        else:
+            with open(backup,'xb') as stream:stream.write(data)
     # Save originals before changing any live file. They survive interrupted runs.
     if not restore:
         for target,backup,old,new,e in prepared:
@@ -146,3 +161,8 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
         raise
     progress('Оригинальная озвучка восстановлена.' if restore else 'Готово! Русская озвучка установлена.',100)
     return len(prepared)
+
+def preflight_packages(game,packages,restore=False,legacy_roots=(),check_running=game_running):
+    """Reject any invalid selected package before starting the first installation."""
+    for package,config in packages:
+        apply(game,package,config,restore,check_running=check_running,legacy_roots=legacy_roots,dry_run=True)

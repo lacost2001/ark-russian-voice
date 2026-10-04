@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from installer_core import apply,game_candidates,safe_path
+from installer_core import apply,game_candidates,safe_path,preflight_packages
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
@@ -31,6 +31,31 @@ class InstallerTests(unittest.TestCase):
         (self.game/self.paths[1]).write_bytes(b'unknown-build')
         with self.assertRaises(ValueError):self.install()
         self.assertEqual((self.game/self.paths[0]).read_bytes(),b'original')
+    def test_legacy_originals_recovered_and_restore_works(self):
+        legacy=self.root/'legacy'
+        for path in self.paths:
+            (self.game/path).write_bytes(b'new')
+            source=legacy/path;source.parent.mkdir(parents=True,exist_ok=True);source.write_bytes(b'original')
+        options=dict(check_running=lambda:False,legacy_roots=[legacy])
+        apply(self.game,self.package,self.config,dry_run=True,**options)
+        self.assertFalse((self.game/'.ark-russian-voice-backup').exists())
+        self.assertEqual(apply(self.game,self.package,self.config,**options),0)
+        self.assertEqual(self.install(True),2)
+        self.assertTrue(all((self.game/p).read_bytes()==b'original' for p in self.paths))
+    def test_wrong_legacy_copy_is_rejected(self):
+        legacy=self.root/'legacy'
+        for path in self.paths:
+            (self.game/path).write_bytes(b'new')
+            source=legacy/path;source.parent.mkdir(parents=True,exist_ok=True);source.write_bytes(b'wrong-original')
+        with self.assertRaisesRegex(ValueError,'Найдена прежняя озвучка'):
+            apply(self.game,self.package,self.config,check_running=lambda:False,legacy_roots=[legacy])
+        self.assertFalse((self.game/'.ark-russian-voice-backup').exists())
+    def test_all_packages_preflight_before_any_writes(self):
+        invalid=self.root/'invalid.zip';invalid.write_bytes(b'broken')
+        with self.assertRaises(ValueError):
+            preflight_packages(self.game,[(self.package,self.config),(invalid,self.config)],check_running=lambda:False)
+        self.assertTrue(all((self.game/p).read_bytes()==b'original' for p in self.paths))
+        self.assertFalse((self.game/'.ark-russian-voice-backup').exists())
     def test_upgrade_preserves_original_and_restores(self):
         self.install()
         original=hashlib.sha256(b'original').hexdigest();previous=hashlib.sha256(b'new').hexdigest()

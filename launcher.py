@@ -7,7 +7,7 @@ import sys
 import threading
 import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
-from installer_core import apply,game_candidates,read_package,game_running
+from installer_core import apply,game_candidates,read_package,game_running,preflight_packages
 from updates import MAPS,fetch_catalog,download,load_settings,save_settings,verify_catalog
 
 RES=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent))
@@ -36,7 +36,7 @@ settings_path=cache/'settings.json';settings=load_settings(settings_path);catalo
 for source in [cache/'catalog.json',BASE/'catalog.json']:
     try:catalog=verify_catalog(source.read_bytes(),config);break
     except Exception:pass
-root=tk.Tk();root.title('ARK — русская озвучка');root.geometry('760x770');root.minsize(760,770)
+root=tk.Tk();root.title('ARK — русская озвучка '+config['app_version']);root.geometry('820x820');root.minsize(820,820)
 style=ttk.Style();style.theme_use('vista' if 'vista' in style.theme_names() else 'clam')
 frame=ttk.Frame(root,padding=24);frame.pack(fill='both',expand=True)
 ttk.Label(frame,text='Русская озвучка ARK',font=('Segoe UI',21,'bold')).pack(anchor='w')
@@ -61,21 +61,21 @@ ttk.Label(frame,textvariable=status,wraplength=700).pack(anchor='w',pady=10)
 bar=ttk.Progressbar(frame,maximum=100);bar.pack(fill='x')
 buttons=ttk.Frame(frame);buttons.pack(fill='x',pady=14)
 events=queue.Queue();busy=False
-def persist():save_settings(settings_path,{'folder':folder.get(),'maps':[m for m,v in map_vars.items() if v.get()],'automatic':automatic.get()})
+def persist():save_settings(settings_path,{'folder':folder.get(),'maps':[m for m,v in map_vars.items() if v.get()],'automatic':automatic.get(),'backup_folder':settings.get('backup_folder','')})
 def refresh_maps():
     available={}
     for p in (catalog or {}).get('packages',[]):
         if p['map'] not in available:available[p['map']]=dict(p)
         else:
             available[p['map']]['count']+=p['count']
-            available[p['map']]['version']=(catalog or {})['version']
+            available[p['map']]['version']=max(available[p['map']]['version'],p['version'],key=lambda v:tuple(int(n) for n in v.split('.')))
     for key,widget in map_widgets.items():
         pack=available.get(key);widget.configure(state='normal' if pack and not busy else 'disabled')
-        map_labels[key].configure(text=f'{pack["count"]} файлов · {pack["version"]}'+(' · неполный пакет' if pack.get('partial') else '') if pack else 'Готовится — пока недоступно')
+        map_labels[key].configure(text=f'{pack["count"]} файлов озвучки · версия {pack["version"]}' if pack else 'Готовится — пока недоступно')
 def set_busy(value):
     global busy
     busy=value
-    for widget in (entry,browse_button,install,restore_button,check_button,auto_widget):widget.configure(state='disabled' if value else 'normal')
+    for widget in (entry,browse_button,install,restore_button,check_button,backup_button,auto_widget):widget.configure(state='disabled' if value else 'normal')
     refresh_maps()
 def check(startup=False):
     if busy:return
@@ -95,8 +95,10 @@ def work(restore=False,auto=False):
     if not selected:status.set('Выберите хотя бы одну доступную карту.');return
     if game_running():status.set('ARK запущен. Закройте игру и нажмите «Установить / обновить».');return
     set_busy(True)
+    legacy_roots=[BASE/'work/original',BASE.parent.parent/'work/original']
+    if settings.get('backup_folder'):legacy_roots.insert(0,Path(settings['backup_folder']))
     def run():
-        completed=[]
+        completed=[];packages=[]
         try:
             for pack in selected:
                 local=BASE/pack['filename']
@@ -104,15 +106,25 @@ def work(restore=False,auto=False):
                     try:read_package(local,pack)
                     except Exception:local=download(pack,cache,lambda t,v:events.put(('progress',t,v)))
                 else:local=download(pack,cache,lambda t,v:events.put(('progress',t,v)))
-                apply(found[0],local,pack,restore,lambda t,v:events.put(('progress',t,v)))
-                if MAPS[pack['map']] not in completed:completed.append(MAPS[pack['map']])
+                packages.append((local,pack))
+            events.put(('progress','Проверка всех выбранных пакетов и оригиналов…',0))
+            preflight_packages(found[0],packages,restore,legacy_roots)
+            for index,(local,pack) in enumerate(packages):
+                apply(found[0],local,pack,restore,lambda t,v:events.put(('progress',t,v)),legacy_roots=legacy_roots)
+                if not any(p['map']==pack['map'] for _,p in packages[index+1:]):completed.append(MAPS[pack['map']])
             events.put(('done','Оригиналы восстановлены.' if restore else 'Выбранная озвучка актуальна: '+', '.join(completed)))
         except Exception as error:events.put(('error',str(error)+('\nЗавершены карты: '+', '.join(completed) if completed else '')))
     threading.Thread(target=run,daemon=True).start()
 install=ttk.Button(buttons,text='Установить / обновить',command=work);install.pack(side='left')
 restore_button=ttk.Button(buttons,text='Вернуть оригинал',command=lambda:work(True));restore_button.pack(side='left',padx=8)
 check_button=ttk.Button(buttons,text='Проверить обновления',command=check);check_button.pack(side='left')
+def choose_backups():
+    value=filedialog.askdirectory(title='Папка оригиналов: work/original или .ark-russian-voice-backup')
+    if value:
+        settings['backup_folder']=value;persist();status.set('Папка копий выбрана. Нажмите «Установить / обновить». Оригиналы будут проверены автоматически.')
+backup_button=ttk.Button(frame,text='Найти резервные копии…',command=choose_backups);backup_button.pack(anchor='w',pady=(0,10))
 ttk.Label(frame,text='Оригиналы сохраняются. Снятие галочки не удаляет озвучку.\nДля удаления выберите карту и нажмите «Вернуть оригинал».',wraplength=700).pack(anchor='w')
+ttk.Label(frame,text='Состав озвучки: готовые записки, досье, диалоги и кат-сцены.\nРанее беззвучные записки других авторов и неразборчивый фоновый шёпот пока не включены.',wraplength=750).pack(anchor='w',pady=(8,0))
 def pump():
     global catalog
     try:
