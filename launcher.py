@@ -66,7 +66,7 @@ def refresh_maps():
     available={p['map']:p for p in (catalog or {}).get('packages',[])}
     for key,widget in map_widgets.items():
         pack=available.get(key);widget.configure(state='normal' if pack and not busy else 'disabled')
-        map_labels[key].configure(text=f'{pack["count"]} записей · {pack["version"]}'+(' · неполный пакет' if pack.get('partial') else '') if pack else 'Готовится — пока недоступно')
+        map_labels[key].configure(text=f'{pack["count"]} файлов · {pack["version"]}'+(' · неполный пакет' if pack.get('partial') else '') if pack else 'Готовится — пока недоступно')
 def set_busy(value):
     global busy
     busy=value

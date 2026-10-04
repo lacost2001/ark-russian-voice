@@ -35,8 +35,16 @@ def safe_path(root,relative):
         raise ValueError('Недопустимый путь в пакете.')
     allowed=('ShooterGame/Content/PrimalEarth/Sound/SFX/Characters/',
              'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/',
-             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/')
-    if not relative.startswith(allowed) or p.suffix!='.uasset':
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/',
+             'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Cinematics/English/',
+             'ShooterGame/Content/Extinction/Matinee/Ascension/Sound/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Cinematics/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNB/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/Rockwell/Cinematics/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/Santiago/')
+    movies=('TheIsland_in','TheIsland_out','ScorchedEarth_in','ScorchedEarth_out','Aberration_in','Aberration_out','Extinction_in')
+    is_movie=str(p.parent)=='ShooterGame/Content/Movies' and p.stem in movies and p.suffix in ('.mp4','.wmv')
+    if not is_movie and (not relative.startswith(allowed) or p.suffix!='.uasset'):
         raise ValueError('Пакет содержит посторонний файл.')
     root=Path(root).resolve()
     path=root.joinpath(*p.parts)

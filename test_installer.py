@@ -62,6 +62,13 @@ class InstallerTests(unittest.TestCase):
                   'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/a.exe',
                   'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Other/a.uasset']:
             with self.assertRaises(ValueError):safe_path(self.game,p)
+    def test_cinematic_allowlist(self):
+        for p in ['ShooterGame/Content/Movies/TheIsland_in.mp4','ShooterGame/Content/Movies/Extinction_in.wmv',
+                  'ShooterGame/Content/Extinction/Matinee/Ascension/Sound/s_ascension_vo_01.uasset']:
+            self.assertEqual(safe_path(self.game,p),self.game/p)
+        for p in ['ShooterGame/Content/Movies/unknown.mp4','ShooterGame/Content/Movies/TheIsland_in.exe',
+                  'ShooterGame/Content/Movies/../Movies/TheIsland_in.mp4']:
+            with self.assertRaises(ValueError):safe_path(self.game,p)
     def test_steam_library_detection(self):
         self.assertEqual(game_candidates(self.root/'SteamLibrary'),[self.game.resolve()])
     def test_rollback_write_failure(self):
