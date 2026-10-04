@@ -33,7 +33,10 @@ def safe_path(root,relative):
     p=PurePosixPath(relative)
     if p.is_absolute() or '..' in p.parts or '\\' in relative or ':' in relative:
         raise ValueError('Недопустимый путь в пакете.')
-    if not relative.startswith('ShooterGame/Content/PrimalEarth/Sound/SFX/Characters/') or p.suffix!='.uasset':
+    allowed=('ShooterGame/Content/PrimalEarth/Sound/SFX/Characters/',
+             'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/')
+    if not relative.startswith(allowed) or p.suffix!='.uasset':
         raise ValueError('Пакет содержит посторонний файл.')
     root=Path(root).resolve()
     path=root.joinpath(*p.parts)

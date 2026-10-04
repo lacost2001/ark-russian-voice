@@ -54,6 +54,14 @@ class InstallerTests(unittest.TestCase):
     def test_path_escape(self):
         for p in ['../escape.uasset','C:/escape.uasset','ShooterGame/../escape.uasset']:
             with self.assertRaises(ValueError):safe_path(self.game,p)
+    def test_genesis_paths_and_neighbors(self):
+        for p in ['ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/a.uasset',
+                  'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/a.uasset']:
+            self.assertEqual(safe_path(self.game,p),self.game/p)
+        for p in ['ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/../../a.uasset',
+                  'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/a.exe',
+                  'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Other/a.uasset']:
+            with self.assertRaises(ValueError):safe_path(self.game,p)
     def test_steam_library_detection(self):
         self.assertEqual(game_candidates(self.root/'SteamLibrary'),[self.game.resolve()])
     def test_rollback_write_failure(self):
