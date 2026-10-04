@@ -1,7 +1,7 @@
 import base64,hashlib,io,json,tempfile,unittest
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from updates import canonical,verify_catalog,download
+from updates import canonical,verify_catalog,download,load_settings
 class UpdateTests(unittest.TestCase):
     def setUp(self):
         self.key=Ed25519PrivateKey.generate();self.config={'repository':'owner/repo','public_key':base64.b64encode(self.key.public_key().public_bytes_raw()).decode()}
@@ -10,6 +10,13 @@ class UpdateTests(unittest.TestCase):
     def test_signature(self):
         raw=self.signed({'schema':1,'packages':[self.pack]});self.assertEqual(verify_catalog(raw,self.config)['schema'],1)
         with self.assertRaises(Exception):verify_catalog(raw.replace('TheIsland','Extinction'),self.config)
+    def test_invalid_settings_recover(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'settings.json'
+            for value in ['null','[]','42','broken']:
+                p.write_text(value);self.assertEqual(load_settings(p)['maps'],['Shared','TheIsland'])
+            p.write_text(json.dumps({'folder':12,'maps':['TheIsland','bogus'],'automatic':'no'}))
+            self.assertEqual(load_settings(p),{'folder':'','maps':['TheIsland'],'automatic':True,'backup_folder':''})
     def test_additive_components(self):
         extra={**self.pack,'component':'additional','filename':'extra.zip'}
         raw=self.signed({'schema':2,'packages':[self.pack,extra]})
@@ -36,4 +43,15 @@ class UpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaises(ValueError):download(self.pack,temp,opener=lambda *a,**k:io.BytesIO(b'good-extra'))
             self.assertEqual(list(Path(temp).iterdir()),[])
+    def test_transient_connection_retries_without_bad_cache(self):
+        from unittest.mock import patch
+        calls=[]
+        def opener(*args,**kwargs):
+            calls.append(1)
+            if len(calls)==1:raise ConnectionError('test disconnect')
+            return io.BytesIO(b'good')
+        with tempfile.TemporaryDirectory() as temp,patch('updates.time.sleep'):
+            self.assertEqual(download(self.pack,temp,opener=opener).read_bytes(),b'good')
+            self.assertEqual(len(calls),2)
+            self.assertFalse(list(Path(temp).glob('*.part')))
 if __name__=='__main__':unittest.main()

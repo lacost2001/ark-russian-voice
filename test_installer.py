@@ -50,6 +50,21 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Найдена прежняя озвучка'):
             apply(self.game,self.package,self.config,check_running=lambda:False,legacy_roots=[legacy])
         self.assertFalse((self.game/'.ark-russian-voice-backup').exists())
+    def test_corrupt_backup_repaired_from_verified_legacy(self):
+        self.install()
+        backup=self.game/'.ark-russian-voice-backup'/(hashlib.sha256(b'original').hexdigest()+'.uasset')
+        backup.write_bytes(b'damaged')
+        legacy=self.root/'legacy';legacy.mkdir();(legacy/backup.name).write_bytes(b'original')
+        apply(self.game,self.package,self.config,restore=True,legacy_roots=[legacy],check_running=lambda:False)
+        self.assertEqual(backup.read_bytes(),b'original')
+        self.assertTrue(all((self.game/p).read_bytes()==b'original' for p in self.paths))
+    def test_corrupt_backup_repaired_from_unmodified_game(self):
+        backup=self.game/'.ark-russian-voice-backup'/(hashlib.sha256(b'original').hexdigest()+'.uasset')
+        backup.parent.mkdir();backup.write_bytes(b'damaged')
+        self.install()
+        self.assertEqual(backup.read_bytes(),b'original')
+        self.install(True)
+        self.assertTrue(all((self.game/p).read_bytes()==b'original' for p in self.paths))
     def test_all_packages_preflight_before_any_writes(self):
         invalid=self.root/'invalid.zip';invalid.write_bytes(b'broken')
         with self.assertRaises(ValueError):

@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import re
 import urllib.request
+import urllib.error
+import time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 MAPS={'Shared':'Общие реплики HLN-A','TheIsland':'The Island','ScorchedEarth':'Scorched Earth','Aberration':'Aberration','Extinction':'Extinction','Genesis1':'Genesis: Part 1','Genesis2':'Genesis: Part 2','Ragnarok':'Ragnarok','Valguero':'Valguero','CrystalIsles':'Crystal Isles','LostIsland':'Lost Island','Fjordur':'Fjordur'}
@@ -32,6 +34,15 @@ def fetch_catalog(config,cache,opener=urllib.request.urlopen):
     data=verify_catalog(raw,config);cache=Path(cache);cache.mkdir(parents=True,exist_ok=True)
     temp=cache/'catalog.tmp';temp.write_bytes(raw);os.replace(temp,cache/'catalog.json');return data
 def download(pack,cache,progress=lambda text,value:None,opener=urllib.request.urlopen):
+    for attempt in range(3):
+        try:return _download_once(pack,cache,progress,opener)
+        except (urllib.error.URLError,TimeoutError,ConnectionError) as error:
+            if isinstance(error,urllib.error.HTTPError) and error.code not in (408,429,500,502,503,504):raise
+            if attempt==2:raise
+            progress('Соединение прервалось. Повтор загрузки '+str(attempt+2)+' из 3…',0)
+            time.sleep(attempt+1)
+
+def _download_once(pack,cache,progress=lambda text,value:None,opener=urllib.request.urlopen):
     cache=Path(cache);cache.mkdir(parents=True,exist_ok=True);target=cache/(pack['package_sha256']+'.zip')
     if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()==pack['package_sha256']:return target
     partial=target.with_suffix('.part')
@@ -49,8 +60,16 @@ def download(pack,cache,progress=lambda text,value:None,opener=urllib.request.ur
         os.replace(partial,target);return target
     finally:partial.unlink(missing_ok=True)
 def load_settings(path):
-    try:return json.loads(Path(path).read_text('utf-8'))
-    except (OSError,ValueError):return {'folder':'','maps':['TheIsland'],'automatic':True}
+    defaults={'folder':'','maps':['Shared','TheIsland'],'automatic':True,'backup_folder':''}
+    try:
+        data=json.loads(Path(path).read_text('utf-8'))
+        if not isinstance(data,dict):return defaults
+        for key in ('folder','backup_folder'):
+            if isinstance(data.get(key),str):defaults[key]=data[key]
+        if isinstance(data.get('automatic'),bool):defaults['automatic']=data['automatic']
+        if isinstance(data.get('maps'),list):defaults['maps']=[m for m in MAPS if m in data['maps']]
+        return defaults
+    except (OSError,ValueError):return defaults
 def save_settings(path,value):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);temp=path.with_suffix('.tmp')
     temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');os.replace(temp,path)

@@ -99,9 +99,12 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
         if oldhash not in [e['original_sha256'],e['new_sha256'],*e.get('previous_sha256',[])]:
             raise ValueError('Версия ARK отличается либо установлен другой мод озвучки. Ни один файл не изменён.\n'+target.name)
         backup=backup_root/(e['original_sha256']+'.uasset')
-        if backup.exists() and (backup.is_symlink() or digest(backup.read_bytes())!=e['original_sha256']):
-            raise ValueError('Резервная копия повреждена: '+target.name)
-        if oldhash!=e['original_sha256'] and not backup.exists():
+        if backup.is_symlink() or (backup.exists() and backup.resolve()!=backup):
+            raise ValueError('Некорректный путь резервной копии: '+target.name)
+        backup_valid=backup.is_file() and digest(backup.read_bytes())==e['original_sha256']
+        if not backup_valid and oldhash==e['original_sha256'] and backup.exists():
+            recovered[backup]=old
+        if oldhash!=e['original_sha256'] and not backup_valid:
             for root in legacy_roots:
                 root=Path(root)
                 for source in (root/e['path'],root/backup.name):
@@ -115,7 +118,7 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
                     '\nЕсли копий нет, восстановите оригинальные файлы через проверку файлов ARK в Steam, затем установите озвучку заново.')
         if restore:
             if oldhash==e['original_sha256']:continue
-            new=backup.read_bytes() if backup.exists() else recovered[backup]
+            new=backup.read_bytes() if backup_valid else recovered[backup]
         else:
             if oldhash==e['new_sha256']:continue
             new=payload[e['path']]
@@ -129,10 +132,13 @@ def apply(game,package,config,restore=False,progress=lambda text,value:None,chec
     if check_running():raise ValueError('ARK запущен. Закройте игру и повторите.')
     backup_root.mkdir(exist_ok=True)
     for backup,data in recovered.items():
-        if backup.exists():
-            if digest(backup.read_bytes())!=digest(data):raise ValueError('Резервная копия изменилась во время проверки.')
-        else:
-            with open(backup,'xb') as stream:stream.write(data)
+        if backup.is_symlink():raise ValueError('Некорректный путь резервной копии.')
+        fd,name=tempfile.mkstemp(prefix='.repair-',dir=backup_root)
+        try:
+            with os.fdopen(fd,'wb') as stream:stream.write(data)
+            os.replace(name,backup)
+        finally:
+            if os.path.exists(name):os.unlink(name)
     # Save originals before changing any live file. They survive interrupted runs.
     if not restore:
         for target,backup,old,new,e in prepared:
