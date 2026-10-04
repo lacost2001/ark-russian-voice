@@ -11,13 +11,19 @@ import threading
 import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
 from installer_core import apply,game_candidates,read_package,game_running,preflight_packages
+from app_update import fetch_manifest,prepare_update,launch_update,apply_request
 from updates import MAPS,fetch_catalog,download,load_settings,save_settings,verify_catalog
 
 RES=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent))
 BASE=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent
 config=json.loads((RES/'release_config.json').read_text('utf-8'))
-parser=argparse.ArgumentParser();parser.add_argument('--verify-package',action='store_true');parser.add_argument('--report');parser.add_argument('--smoke-test',action='store_true');parser.add_argument('--preview',action='store_true')
+parser=argparse.ArgumentParser();parser.add_argument('--verify-package',action='store_true');parser.add_argument('--report');parser.add_argument('--smoke-test',action='store_true');parser.add_argument('--preview',action='store_true');parser.add_argument('--apply-app-update')
 args=parser.parse_args()
+if args.apply_app_update:
+    try:apply_request(args.apply_app_update,config)
+    except Exception as error:
+        tk.Tk().withdraw();messagebox.showerror('Обновление приложения',str(error)+'\nПредыдущий EXE сохранён рядом с программой с окончанием .previous.');raise SystemExit(1)
+    raise SystemExit(0)
 if args.verify_package:
     try:
         catalog=verify_catalog((BASE/'catalog.json').read_bytes(),config);counts={}
@@ -90,12 +96,14 @@ for index,(key,title) in enumerate(MAPS.items()):
     label=ttk.Label(card,text='Нет загруженного каталога',style='Card.TLabel');label.pack(anchor='w',padx=(4,0));map_labels[key]=label
 automatic=tk.BooleanVar(value=settings.get('automatic',True))
 auto_widget=ttk.Checkbutton(frame,text='Обновлять выбранные карты при запуске программы',variable=automatic);auto_widget.pack(anchor='w')
+app_automatic=tk.BooleanVar(value=settings.get('app_automatic',True))
+app_auto_widget=ttk.Checkbutton(frame,text='Автоматически обновлять само приложение и перезапускать его',variable=app_automatic);app_auto_widget.pack(anchor='w')
 status=tk.StringVar(value='Проверка обновлений…')
 ttk.Label(frame,textvariable=status,wraplength=870).pack(anchor='w',pady=10)
 bar=ttk.Progressbar(frame,maximum=100);bar.pack(fill='x')
 buttons=ttk.Frame(frame);buttons.pack(fill='x',pady=14)
 events=queue.Queue();busy=False
-def persist():save_settings(settings_path,{'folder':folder.get(),'maps':[m for m,v in map_vars.items() if v.get()],'automatic':automatic.get(),'backup_folder':settings.get('backup_folder','')})
+def persist():save_settings(settings_path,{'folder':folder.get(),'maps':[m for m,v in map_vars.items() if v.get()],'automatic':automatic.get(),'app_automatic':app_automatic.get(),'backup_folder':settings.get('backup_folder','')})
 def refresh_maps():
     available={}
     for p in (catalog or {}).get('packages',[]):
@@ -109,13 +117,22 @@ def refresh_maps():
 def set_busy(value):
     global busy
     busy=value
-    for widget in (entry,browse_button,install,restore_button,check_button,backup_button,diagnose_button,auto_widget):widget.configure(state='disabled' if value else 'normal')
+    for widget in (entry,browse_button,install,restore_button,check_button,backup_button,diagnose_button,auto_widget,app_auto_widget):widget.configure(state='disabled' if value else 'normal')
     refresh_maps()
 def check(startup=False):
     if busy:return
     set_busy(True);status.set('Проверка обновлений…')
+    update_app=getattr(sys,'frozen',False) and (app_automatic.get() or not startup)
     def run():
-        try:events.put(('catalog',fetch_catalog(config,cache),startup))
+        try:
+            if update_app:
+                try:
+                    raw,_=fetch_manifest(config)
+                    staged=prepare_update(raw,config,cache,lambda t,v:events.put(('progress',t,v)))
+                    if staged:
+                        events.put(('app_ready',staged));return
+                except Exception as error:logger.warning('Application update unavailable: %s',error)
+            events.put(('catalog',fetch_catalog(config,cache),startup))
         except Exception as error:
             logger.warning('Catalog update failed: %s',error)
             events.put(('offline',str(error)))
@@ -183,6 +200,13 @@ def pump():
             if e[0]=='catalog':
                 catalog=e[1];refresh_maps();status.set('Каталог обновлён. Выберите карты для установки.')
                 if e[2] and automatic.get():work(auto=True)
+            elif e[0]=='app_ready':
+                try:
+                    persist();launch_update(e[1],sys.executable,os.getpid());root.destroy();return
+                except Exception as error:
+                    logger.exception('Application replacement could not start')
+                    status.set('Не удалось обновить приложение. Текущая версия сохранена.')
+                    messagebox.showerror('Обновление приложения',str(error)+'\nПереместите программу в доступную для записи папку или скачайте новую версию из GitHub.')
             elif e[0]=='offline':
                 status.set('Нет доступа к обновлениям. Можно установить сохранённые пакеты.')
                 if catalog and automatic.get() and folder.get():work(auto=True)

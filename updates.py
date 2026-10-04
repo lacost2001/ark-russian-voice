@@ -60,13 +60,14 @@ def _download_once(pack,cache,progress=lambda text,value:None,opener=urllib.requ
         os.replace(partial,target);return target
     finally:partial.unlink(missing_ok=True)
 def load_settings(path):
-    defaults={'folder':'','maps':['Shared','TheIsland'],'automatic':True,'backup_folder':''}
+    defaults={'folder':'','maps':['Shared','TheIsland'],'automatic':True,'app_automatic':True,'backup_folder':''}
     try:
         data=json.loads(Path(path).read_text('utf-8'))
         if not isinstance(data,dict):return defaults
         for key in ('folder','backup_folder'):
             if isinstance(data.get(key),str):defaults[key]=data[key]
         if isinstance(data.get('automatic'),bool):defaults['automatic']=data['automatic']
+        if isinstance(data.get('app_automatic'),bool):defaults['app_automatic']=data['app_automatic']
         if isinstance(data.get('maps'),list):defaults['maps']=[m for m in MAPS if m in data['maps']]
         return defaults
     except (OSError,ValueError):return defaults

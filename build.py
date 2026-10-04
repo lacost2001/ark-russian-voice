@@ -12,6 +12,6 @@ if __name__ == '__main__':
     out=args.out.resolve()
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--clean',
         '--onefile','--windowed','--name','ARK-Russian-Voice',
-        '--distpath',str(out),'--workpath',str(out.parent/'build-2.4.0'),
-        '--specpath',str(out.parent/'build-2.4.0'),
+        '--distpath',str(out),'--workpath',str(out.parent/'build-2.5.0'),
+        '--specpath',str(out.parent/'build-2.5.0'),
         '--add-data',str(source/'release_config.json')+';.',str(source/'launcher.py')],check=True)

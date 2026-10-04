@@ -16,7 +16,7 @@ class UpdateTests(unittest.TestCase):
             for value in ['null','[]','42','broken']:
                 p.write_text(value);self.assertEqual(load_settings(p)['maps'],['Shared','TheIsland'])
             p.write_text(json.dumps({'folder':12,'maps':['TheIsland','bogus'],'automatic':'no'}))
-            self.assertEqual(load_settings(p),{'folder':'','maps':['TheIsland'],'automatic':True,'backup_folder':''})
+            self.assertEqual(load_settings(p),{'folder':'','maps':['TheIsland'],'automatic':True,'app_automatic':True,'backup_folder':''})
     def test_additive_components(self):
         extra={**self.pack,'component':'additional','filename':'extra.zip'}
         raw=self.signed({'schema':2,'packages':[self.pack,extra]})
