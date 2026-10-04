@@ -1,0 +1,54 @@
+"""Signed catalog and verified downloads. Players need no accounts or API keys."""
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import urllib.request
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+MAPS={'TheIsland':'The Island','ScorchedEarth':'Scorched Earth','Aberration':'Aberration','Extinction':'Extinction','Genesis1':'Genesis: Part 1','Genesis2':'Genesis: Part 2'}
+def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode('utf-8')
+def verify_catalog(raw,config):
+    envelope=json.loads(raw);data=envelope['payload']
+    Ed25519PublicKey.from_public_bytes(base64.b64decode(config['public_key'])).verify(base64.b64decode(envelope['signature']),canonical(data))
+    if data['schema']!=1:raise ValueError('Нужна новая версия программы.')
+    seen=set()
+    for pack in data['packages']:
+        if pack['map'] not in MAPS or pack['map'] in seen:raise ValueError('Неверный список карт.')
+        seen.add(pack['map'])
+        if not re.fullmatch('[0-9a-f]{64}',pack['package_sha256']):raise ValueError('Неверная контрольная сумма.')
+        if not (0<pack['size']<2_000_000_000 and 0<pack['count']<10000):raise ValueError('Неверный размер пакета.')
+        if not re.fullmatch('[A-Za-z0-9_.-]+[.]zip',pack['filename']):raise ValueError('Неверное имя пакета.')
+        if not pack['url'].startswith('https://github.com/'+config['repository']+'/releases/download/'):raise ValueError('Неизвестный источник обновления.')
+    return data
+def fetch_catalog(config,cache,opener=urllib.request.urlopen):
+    url='https://github.com/'+config['repository']+'/releases/latest/download/catalog.json'
+    with opener(urllib.request.Request(url,headers={'User-Agent':'ARK-Russian-Voice/2.0','Cache-Control':'no-cache'}),timeout=20) as response:raw=response.read(2_000_001)
+    if len(raw)>2_000_000:raise ValueError('Слишком большой каталог.')
+    data=verify_catalog(raw,config);cache=Path(cache);cache.mkdir(parents=True,exist_ok=True)
+    temp=cache/'catalog.tmp';temp.write_bytes(raw);os.replace(temp,cache/'catalog.json');return data
+def download(pack,cache,progress=lambda text,value:None,opener=urllib.request.urlopen):
+    cache=Path(cache);cache.mkdir(parents=True,exist_ok=True);target=cache/(pack['package_sha256']+'.zip')
+    if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()==pack['package_sha256']:return target
+    partial=target.with_suffix('.part')
+    try:
+        total=0;hasher=hashlib.sha256()
+        with opener(urllib.request.Request(pack['url'],headers={'User-Agent':'ARK-Russian-Voice/2.0'}),timeout=30) as response,partial.open('wb') as stream:
+            while True:
+                chunk=response.read(1024*1024)
+                if not chunk:break
+                total+=len(chunk)
+                if total>pack['size']:raise ValueError('Размер загрузки не соответствует каталогу.')
+                hasher.update(chunk);stream.write(chunk)
+                progress('Загрузка '+MAPS[pack['map']]+f': {total//1048576} / {pack["size"]//1048576} МБ',int(total*100/pack['size']))
+        if total!=pack['size'] or hasher.hexdigest()!=pack['package_sha256']:raise ValueError('Загрузка повреждена. Игра не изменена.')
+        os.replace(partial,target);return target
+    finally:partial.unlink(missing_ok=True)
+def load_settings(path):
+    try:return json.loads(Path(path).read_text('utf-8'))
+    except (OSError,ValueError):return {'folder':'','maps':['TheIsland'],'automatic':True}
+def save_settings(path,value):
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True);temp=path.with_suffix('.tmp')
+    temp.write_text(json.dumps(value,ensure_ascii=False),encoding='utf-8');os.replace(temp,path)
