@@ -97,7 +97,7 @@ class InstallerTests(unittest.TestCase):
     def test_genesis_paths_and_neighbors(self):
         for p in ['ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/a.uasset',
                   'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/a.uasset']:
-            self.assertEqual(safe_path(self.game,p),self.game/p)
+            self.assertEqual(safe_path(self.game,p),(self.game/p).resolve())
         for p in ['ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/../../a.uasset',
                   'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/a.exe',
                   'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Other/a.uasset']:
@@ -105,7 +105,7 @@ class InstallerTests(unittest.TestCase):
     def test_cinematic_allowlist(self):
         for p in ['ShooterGame/Content/Movies/TheIsland_in.mp4','ShooterGame/Content/Movies/Extinction_in.wmv',
                   'ShooterGame/Content/Extinction/Matinee/Ascension/Sound/s_ascension_vo_01.uasset']:
-            self.assertEqual(safe_path(self.game,p),self.game/p)
+            self.assertEqual(safe_path(self.game,p),(self.game/p).resolve())
         for p in ['ShooterGame/Content/Movies/unknown.mp4','ShooterGame/Content/Movies/TheIsland_in.exe',
                   'ShooterGame/Content/Movies/../Movies/TheIsland_in.mp4']:
             with self.assertRaises(ValueError):safe_path(self.game,p)
