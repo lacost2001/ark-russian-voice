@@ -10,6 +10,18 @@ class UpdateTests(unittest.TestCase):
     def test_signature(self):
         raw=self.signed({'schema':1,'packages':[self.pack]});self.assertEqual(verify_catalog(raw,self.config)['schema'],1)
         with self.assertRaises(Exception):verify_catalog(raw.replace('TheIsland','Extinction'),self.config)
+    def test_additive_components(self):
+        extra={**self.pack,'component':'additional','filename':'extra.zip'}
+        raw=self.signed({'schema':2,'packages':[self.pack,extra]})
+        self.assertEqual(len(verify_catalog(raw,self.config)['packages']),2)
+        with self.assertRaises(ValueError):
+            verify_catalog(self.signed({'schema':2,'packages':[extra,extra]}),self.config)
+    def test_new_map_and_invalid_component(self):
+        pack={**self.pack,'map':'Fjordur'}
+        verify_catalog(self.signed({'schema':2,'packages':[pack]}),self.config)
+        pack['component']='untrusted'
+        with self.assertRaises(ValueError):
+            verify_catalog(self.signed({'schema':2,'packages':[pack]}),self.config)
     def test_wrong_repository(self):
         self.pack['url']='https://attacker.invalid/island.zip'
         with self.assertRaises(ValueError):verify_catalog(self.signed({'schema':1,'packages':[self.pack]}),self.config)

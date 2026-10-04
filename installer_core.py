@@ -34,17 +34,25 @@ def safe_path(root,relative):
     if p.is_absolute() or '..' in p.parts or '\\' in relative or ':' in relative:
         raise ValueError('Недопустимый путь в пакете.')
     allowed=('ShooterGame/Content/PrimalEarth/Sound/SFX/Characters/',
+             'ShooterGame/Content/PrimalEarth/ExplorerNotes/HLNA/Audio/Prelaunch/English/',
              'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Glitches/English/',
-             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/',
              'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Cinematics/English/',
+             'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Functional/',
+             'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Missions/English/',
+             'ShooterGame/Content/Genesis/Sound/Characters/HLNA/Store/English/',
+             'ShooterGame/Content/Genesis/Sound/Characters/VRBoss/Voice/',
              'ShooterGame/Content/Extinction/Matinee/Ascension/Sound/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Chronicles/',
              'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Cinematics/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Boss/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/HLNA/Missions/',
              'ShooterGame/Content/Genesis2/Sounds/Characters/HLNB/',
-             'ShooterGame/Content/Genesis2/Sounds/Characters/Rockwell/Cinematics/',
+             'ShooterGame/Content/Genesis2/Sounds/Characters/Rockwell/',
              'ShooterGame/Content/Genesis2/Sounds/Characters/Santiago/')
     movies=('TheIsland_in','TheIsland_out','ScorchedEarth_in','ScorchedEarth_out','Aberration_in','Aberration_out','Extinction_in')
     is_movie=str(p.parent)=='ShooterGame/Content/Movies' and p.stem in movies and p.suffix in ('.mp4','.wmv')
-    if not is_movie and (not relative.startswith(allowed) or p.suffix!='.uasset'):
+    legacy_hlna=str(p.parent)=='ShooterGame/Content/Genesis/Sound/Characters/HLNA' and p.stem.startswith('s_hlna_')
+    if not is_movie and ((not relative.startswith(allowed) and not legacy_hlna) or p.suffix!='.uasset'):
         raise ValueError('Пакет содержит посторонний файл.')
     root=Path(root).resolve()
     path=root.joinpath(*p.parts)

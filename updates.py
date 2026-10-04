@@ -8,16 +8,18 @@ import re
 import urllib.request
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-MAPS={'TheIsland':'The Island','ScorchedEarth':'Scorched Earth','Aberration':'Aberration','Extinction':'Extinction','Genesis1':'Genesis: Part 1','Genesis2':'Genesis: Part 2'}
+MAPS={'Shared':'Общие реплики HLN-A','TheIsland':'The Island','ScorchedEarth':'Scorched Earth','Aberration':'Aberration','Extinction':'Extinction','Genesis1':'Genesis: Part 1','Genesis2':'Genesis: Part 2','Ragnarok':'Ragnarok','Valguero':'Valguero','CrystalIsles':'Crystal Isles','LostIsland':'Lost Island','Fjordur':'Fjordur'}
 def canonical(value):return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode('utf-8')
 def verify_catalog(raw,config):
     envelope=json.loads(raw);data=envelope['payload']
     Ed25519PublicKey.from_public_bytes(base64.b64decode(config['public_key'])).verify(base64.b64decode(envelope['signature']),canonical(data))
-    if data['schema']!=1:raise ValueError('Нужна новая версия программы.')
+    if data['schema'] not in (1,2):raise ValueError('Нужна новая версия программы.')
     seen=set()
     for pack in data['packages']:
-        if pack['map'] not in MAPS or pack['map'] in seen:raise ValueError('Неверный список карт.')
-        seen.add(pack['map'])
+        identity=(pack['map'],pack.get('component','base'))
+        if pack['map'] not in MAPS or identity in seen:raise ValueError('Неверный список карт.')
+        if pack.get('component','base') not in ('base','additional'):raise ValueError('Неверный компонент пакета.')
+        seen.add(identity)
         if not re.fullmatch('[0-9a-f]{64}',pack['package_sha256']):raise ValueError('Неверная контрольная сумма.')
         if not (0<pack['size']<2_000_000_000 and 0<pack['count']<10000):raise ValueError('Неверный размер пакета.')
         if not re.fullmatch('[A-Za-z0-9_.-]+[.]zip',pack['filename']):raise ValueError('Неверное имя пакета.')

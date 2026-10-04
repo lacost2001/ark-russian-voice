@@ -19,7 +19,7 @@ if args.verify_package:
     try:
         catalog=verify_catalog((BASE/'catalog.json').read_bytes(),config);counts={}
         for pack in catalog['packages']:
-            m,_=read_package(BASE/pack['filename'],pack);counts[pack['map']]=len(m['entries'])
+            m,_=read_package(BASE/pack['filename'],pack);counts[pack['map']]=counts.get(pack['map'],0)+len(m['entries'])
         result={'ok':True,'maps':counts}
     except Exception as error:result={'ok':False,'error':str(error)}
     if args.report:Path(args.report).write_text(json.dumps(result),encoding='utf-8')
@@ -36,7 +36,7 @@ settings_path=cache/'settings.json';settings=load_settings(settings_path);catalo
 for source in [cache/'catalog.json',BASE/'catalog.json']:
     try:catalog=verify_catalog(source.read_bytes(),config);break
     except Exception:pass
-root=tk.Tk();root.title('ARK — русская озвучка');root.geometry('760x610');root.minsize(760,610)
+root=tk.Tk();root.title('ARK — русская озвучка');root.geometry('760x770');root.minsize(760,770)
 style=ttk.Style();style.theme_use('vista' if 'vista' in style.theme_names() else 'clam')
 frame=ttk.Frame(root,padding=24);frame.pack(fill='both',expand=True)
 ttk.Label(frame,text='Русская озвучка ARK',font=('Segoe UI',21,'bold')).pack(anchor='w')
@@ -48,10 +48,10 @@ def browse():
     value=filedialog.askdirectory(title='Папка ARK или Steam')
     if value:folder.set(value)
 browse_button=ttk.Button(row,text='Выбрать…',command=browse);browse_button.pack(side='right',padx=(8,0))
-maps_frame=ttk.LabelFrame(frame,text='Карты',padding=10);maps_frame.pack(fill='x',pady=12)
+maps_frame=ttk.LabelFrame(frame,text='Карты и общие голоса',padding=10);maps_frame.pack(fill='x',pady=12)
 map_vars={};map_widgets={};map_labels={}
 for index,(key,title) in enumerate(MAPS.items()):
-    variable=tk.BooleanVar(value=key in settings.get('maps',['TheIsland']));map_vars[key]=variable
+    variable=tk.BooleanVar(value=key in settings.get('maps',['Shared','TheIsland']));map_vars[key]=variable
     widget=ttk.Checkbutton(maps_frame,text=title,variable=variable);widget.grid(row=index,column=0,sticky='w',padx=(0,24));map_widgets[key]=widget
     label=ttk.Label(maps_frame,text='Готовится');label.grid(row=index,column=1,sticky='w');map_labels[key]=label
 automatic=tk.BooleanVar(value=settings.get('automatic',True))
@@ -63,7 +63,12 @@ buttons=ttk.Frame(frame);buttons.pack(fill='x',pady=14)
 events=queue.Queue();busy=False
 def persist():save_settings(settings_path,{'folder':folder.get(),'maps':[m for m,v in map_vars.items() if v.get()],'automatic':automatic.get()})
 def refresh_maps():
-    available={p['map']:p for p in (catalog or {}).get('packages',[])}
+    available={}
+    for p in (catalog or {}).get('packages',[]):
+        if p['map'] not in available:available[p['map']]=dict(p)
+        else:
+            available[p['map']]['count']+=p['count']
+            available[p['map']]['version']=(catalog or {})['version']
     for key,widget in map_widgets.items():
         pack=available.get(key);widget.configure(state='normal' if pack and not busy else 'disabled')
         map_labels[key].configure(text=f'{pack["count"]} файлов · {pack["version"]}'+(' · неполный пакет' if pack.get('partial') else '') if pack else 'Готовится — пока недоступно')
@@ -100,7 +105,7 @@ def work(restore=False,auto=False):
                     except Exception:local=download(pack,cache,lambda t,v:events.put(('progress',t,v)))
                 else:local=download(pack,cache,lambda t,v:events.put(('progress',t,v)))
                 apply(found[0],local,pack,restore,lambda t,v:events.put(('progress',t,v)))
-                completed.append(MAPS[pack['map']])
+                if MAPS[pack['map']] not in completed:completed.append(MAPS[pack['map']])
             events.put(('done','Оригиналы восстановлены.' if restore else 'Выбранная озвучка актуальна: '+', '.join(completed)))
         except Exception as error:events.put(('error',str(error)+('\nЗавершены карты: '+', '.join(completed) if completed else '')))
     threading.Thread(target=run,daemon=True).start()
